@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cell: [starrocks-ssb-sf1]
+        cell: [starrocks-tpch-sf1, starrocks-tpcds-sf1]
     timeout-minutes: 355
     env:
       CELL: ${{ matrix.cell }}
@@ -218,7 +218,7 @@ jobs:
           free -b > "$OUT/env/free-after.txt"
           df -h > "$OUT/env/df-after.txt"
           if [ -f "$OUT/harness/summary.md" ]; then
-            { echo "## ${CELL} (${HOST_CLASS})"; cat "$OUT/env/runner.txt" | sed 's/^/    /'; cat "$OUT/harness/summary.md"; } >> "$GITHUB_STEP_SUMMARY"
+            { echo "## ${CELL} (${HOST_CLASS})"; cat "$OUT/env/runner.txt" | sed 's/^/    /'; cat "$OUT/harness/summary.md"; } | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           if [ -f "$OUT/capture/capture.md" ]; then
             cat "$OUT/capture/capture.md" >> "$GITHUB_STEP_SUMMARY"
