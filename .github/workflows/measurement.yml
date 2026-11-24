@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cell: [starrocks-tpch-sf1, starrocks-tpcds-sf1]
+        cell: [starrocks-tpcds-sf1, starrocks-tpch-sf1]
     timeout-minutes: 355
     env:
       CELL: ${{ matrix.cell }}
@@ -55,6 +55,12 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           ref: 1d698fdc535092b2ff488397fdccf96a115f6870
+
+      - name: Check out the diagnostic scripts
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: diagsrc
+          sparse-checkout: diag
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
@@ -190,11 +196,15 @@ jobs:
         run: |
           benchmark="${CELL#starrocks-}"
           benchmark="${benchmark%-sf1}"
+          mv diagsrc "$RUNNER_TEMP/diagsrc"
+          PYTHONPATH=. uv run -- python "$RUNNER_TEMP/diagsrc/diag/arms.py" "$benchmark" "$OUT/arms"
+          arms=(); for f in "$OUT"/arms/*.yaml; do n=$(basename "$f" .yaml); arms+=(--arm "$n=$f"); done
           uv run -- python -m scripts.tuning_evidence run --platform starrocks --container sr \
             --benchmark "$benchmark" --scale 1 --data-dir "$DATA/${benchmark}_sf1" \
-            --arm N=notuning --arm N2=notuning --arm T=tuned \
+            --arm N=notuning --arm N2=notuning "${arms[@]}" --arm T=tuned --keep-databases \
             --baseline N --calibration-arm N2 --rounds "$ROUNDS" --seed "$SEED" \
             --load-ceiling 12 --round-retries 5 --out "$OUT/harness" 2>&1 | tee "$OUT/run.log"
+          if [ "$benchmark" = tpcds ]; then PYTHONPATH=. uv run -- python "$RUNNER_TEMP/diagsrc/diag/q51.py" 2>&1 | tee "$OUT/q51.log"; fi
 
       - name: Record the StarRocks end state
         if: ${{ always() && startsWith(matrix.cell, 'starrocks-') }}
