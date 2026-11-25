@@ -12,5 +12,5 @@ def only(key):
     return fn
 if bench == "tpcds":
     write("dist", only("distribution")); write("sort", only("sorting"))
-else:
+elif bench == "tpch":
     write("lineitem", lambda t: {"LINEITEM": t["LINEITEM"]}); write("orders", lambda t: {"ORDERS": t["ORDERS"]})
