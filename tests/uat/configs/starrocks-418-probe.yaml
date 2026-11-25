@@ -1,0 +1,56 @@
+# TEMPLATE — canonical, repeatedly-run release-gate stage config; edited in
+# place across releases (e.g. cross_scale_coverage_min_pairs re-derivation),
+# not cloned per sweep. See _project/specs/uat-framework.md Section 9.
+name: "starrocks-418-probe"
+description: "Release-gate stage 2: Docker non-OLTP stacks, scales 0.01/0.1/1; CedarDB is back in the gate (cedardb-release-uat-coverage) with its TPC-DS OBT SF1 disk envelope and its TPC-Havoc and TPC-H Skew timeout envelopes pruned"
+
+phases:
+  - preflight
+  - execute
+  - validate
+  - package
+  - report
+
+platforms:
+  include: ["starrocks"]
+
+benchmarks:
+  include: ["tpch","tpcds","ssb","tpch_skew","tpchavoc","read_primitives","write_primitives","transaction_primitives","metadata_primitives","datavault","coffeeshop","amplab","h2odb","tsbs_devops"]
+
+compatibility:
+  release_gate_runtime_envelopes: true
+
+scales:
+  rungs: [0.01]
+
+execute:
+  per_cell_timeout_s: 1200
+  early_stop_after_s: 86400
+  early_stop_on_failure: false
+  phases_arg: "load,power"
+  skip_unreachable: true
+  parallel_platforms: false
+  infrastructure_retry_job_budget_s: 19800
+
+preflight:
+  free_space_min_gib: 5
+  docker_required: true
+
+cleanup:
+  preserve_datagen: true
+  prune_databases: true
+  docker_manage_platforms: true
+  docker_platform_switch: "volumes"
+  docker_project_prefix: "benchbox-uat-probe"
+  docker_start_timeout_s: 300
+  docker_fixed_container_name_policy: "fail"
+
+validate:
+  validator_clean_rate_floor: 1.0
+
+package:
+  submit_terminal_state: "local-stage"
+
+report:
+  matrix_summary_tsv: "matrix_summary.tsv"
+  cross_scale_coverage_min_pairs: null
