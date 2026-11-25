@@ -1,0 +1,52 @@
+name: ClickHouse 26.8 compatibility
+on:
+  push:
+    branches: ["measure/ch268b"]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {v: "25.8", image: "clickhouse/clickhouse-server:25.8@sha256:0152dd511befe6a2c2ef53e930726179669b08116da78500b37c51c96ff5ee77"}
+          - {v: "26.8", image: "clickhouse/clickhouse-server:26.8@sha256:e49863ded96abdc0545bcd0320c1b99c979c18f27915eb6519a5546760d24cb9"}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: '3.12'}
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+      - run: uv sync --group dev --extra clickhouse --extra clickhouse-server --extra duckdb
+      - name: Start ClickHouse
+        run: |
+          docker run -d --name ch --memory 8g --ulimit nofile=262144:262144 -p 9000:9000 -p 8123:8123 -e CLICKHOUSE_DB=default -e CLICKHOUSE_PASSWORD=benchbox -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 "${{ matrix.image }}"
+          for _ in $(seq 1 60); do docker exec ch clickhouse-client --password benchbox -q "select version()" 2>/dev/null && break; sleep 2; done
+          mkdir -p "$RUNNER_TEMP/out/plans"
+      - name: Statements
+        run: uv run -- python diag/stmts.py | tee "$RUNNER_TEMP/out/stmts.txt"
+      - name: Live tests
+        if: always()
+        env: {CLICKHOUSE_HOST: localhost, CLICKHOUSE_PASSWORD: benchbox}
+        run: |
+          uv run -- python -m pytest -n 0 -m "" tests/integration/platforms/test_clickhouse_live.py tests/integration/test_plan_capture_synthetic_parsers_live.py -k "ClickHouse" -rs 2>&1 | tee "$RUNNER_TEMP/out/live.txt"
+      - name: Plans
+        if: always()
+        env: {PYTHONPATH: ".", CLICKHOUSE_HOST: localhost}
+        run: PLAN_OUT="$RUNNER_TEMP/out/plans" uv run -- python diag/plans.py
+      - name: Operations without skips
+        if: always()
+        env: {PYTHONPATH: "."}
+        run: |
+          for b in transaction_primitives write_primitives; do
+            PROBE_OUT="$RUNNER_TEMP/out/$b.jsonl" timeout 2400 uv run -- python diag/ops.py run --platform clickhouse-server --benchmark $b --scale 0.01 --non-interactive --force --phases load,power --platform-option port=9000 --platform-option http_port=8123 --platform-option password=benchbox > "$RUNNER_TEMP/out/$b.log" 2>&1 || echo "exit $?"
+            wc -l "$RUNNER_TEMP/out/$b.jsonl" || tail -30 "$RUNNER_TEMP/out/$b.log"
+          done
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with: {name: "probe-${{ matrix.v }}", path: "${{ runner.temp }}/out"}
