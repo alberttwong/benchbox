@@ -2,7 +2,7 @@ name: Measurement
 
 on:
   push:
-    branches: ["measure/ch268"]
+    branches: ["measure/ch268tpch"]
 
 concurrency:
   group: measurement-${{ github.ref }}
@@ -30,11 +30,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cell: [clickhouse-tpch-sf1, clickhouse-ssb-sf1, clickhouse-tpcds-sf1, clickhouse-tpch-q21]
+        cell: [clickhouse-tpch-sf1]
     env:
       CELL: ${{ matrix.cell }}
       SEED: "42"
-      ROUNDS: ${{ matrix.cell == 'clickhouse-ssb-sf1' && '15' || '9' }}
+      ROUNDS: "15"
     steps:
       - name: Validate inputs
         run: |
@@ -52,7 +52,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ github.sha }}
+          ref: 62a0c9b0f8dc0eaad44f0f9bcf94ee97e68cbc27
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
