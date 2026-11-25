@@ -1,36 +1,11 @@
 name: Measurement
 
 on:
-  workflow_dispatch:
-    inputs:
-      cell:
-        description: "Measurement cell to run"
-        type: choice
-        required: true
-        options:
-          - duckdb-tpch-sf10
-          - duckdb-ssb-sf10
-          - duckdb-tpcds-sf10
-          - clickhouse-tpcds-sf1
-          - clickhouse-tpch-q21
-      seed:
-        description: "Harness seed"
-        type: string
-        required: false
-        default: "42"
-      rounds:
-        description: "Timed rounds per arm (at least 7)"
-        type: string
-        required: false
-        default: "9"
-      ref:
-        description: "Commit to measure (default: the dispatched commit)"
-        type: string
-        required: false
-        default: ""
+  push:
+    branches: ["measure/ch268"]
 
 concurrency:
-  group: measurement-${{ inputs.cell }}
+  group: measurement-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -38,7 +13,7 @@ permissions:
   packages: read
 
 env:
-  CLICKHOUSE_IMAGE: ghcr.io/benchbox-dev/clickhouse:26.8@sha256:e49863ded96abdc0545bcd0320c1b99c979c18f27915eb6519a5546760d24cb9
+  CLICKHOUSE_IMAGE: clickhouse/clickhouse-server:26.8@sha256:e49863ded96abdc0545bcd0320c1b99c979c18f27915eb6519a5546760d24cb9
   CLICKHOUSE_CONTAINER_MEMORY: 5376m
   CLICKHOUSE_PASSWORD: benchbox
   HOST_CLASS: github-hosted ubuntu-latest, 4 vCPU, 16 GB RAM
@@ -49,13 +24,17 @@ defaults:
 
 jobs:
   measure:
-    name: Measure ${{ inputs.cell }}
+    name: Measure ${{ matrix.cell }}
     runs-on: ubuntu-latest
     timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        cell: [clickhouse-tpch-sf1, clickhouse-ssb-sf1, clickhouse-tpcds-sf1, clickhouse-tpch-q21]
     env:
-      CELL: ${{ inputs.cell }}
-      SEED: ${{ inputs.seed }}
-      ROUNDS: ${{ inputs.rounds }}
+      CELL: ${{ matrix.cell }}
+      SEED: "42"
+      ROUNDS: ${{ matrix.cell == 'clickhouse-ssb-sf1' && '15' || '9' }}
     steps:
       - name: Validate inputs
         run: |
@@ -73,7 +52,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
@@ -117,7 +96,7 @@ jobs:
           df -h > "$out/env/df-before.txt"
 
       - name: Run the DuckDB template ablation
-        if: ${{ startsWith(inputs.cell, 'duckdb-') }}
+        if: ${{ startsWith(matrix.cell, 'duckdb-') }}
         run: |
           benchmark="${CELL#duckdb-}"
           benchmark="${benchmark%-sf10}"
@@ -131,14 +110,8 @@ jobs:
             --baseline N --calibration-arm N2 --rounds "$ROUNDS" --seed "$SEED" \
             --load-ceiling 12 --round-retries 5 --out "$OUT/harness" 2>&1 | tee "$OUT/run.log"
 
-      - name: Log in to GHCR
-        if: ${{ startsWith(inputs.cell, 'clickhouse-') }}
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
-
       - name: Start the ClickHouse server under the release memory limit
-        if: ${{ startsWith(inputs.cell, 'clickhouse-') }}
+        if: ${{ startsWith(matrix.cell, 'clickhouse-') }}
         run: |
           docker run -d --name ch \
             --memory "$CLICKHOUSE_CONTAINER_MEMORY" --memory-swap "$CLICKHOUSE_CONTAINER_MEMORY" \
@@ -162,16 +135,17 @@ jobs:
           cat "$OUT/env/ch-version.txt"
 
       - name: Run the ClickHouse TPC-DS tuned-versus-notuning cell
-        if: ${{ inputs.cell == 'clickhouse-tpcds-sf1' }}
+        if: ${{ endsWith(matrix.cell, '-sf1') }}
         run: |
+          benchmark="${CELL#clickhouse-}"; benchmark="${benchmark%-sf1}"
           uv run -- python -m scripts.tuning_evidence run --platform clickhouse-server --port 9000 --container ch \
-            --benchmark tpcds --scale 1 --data-dir "$DATA/tpcds_sf1" \
+            --benchmark "$benchmark" --scale 1 --data-dir "$DATA/${benchmark}_sf1" \
             --arm N=notuning --arm N2=notuning --arm S=load=tuned,session=notuning --arm T=tuned \
             --baseline N --calibration-arm N2 --rounds "$ROUNDS" --seed "$SEED" \
             --load-ceiling 12 --round-retries 5 --out "$OUT/harness" 2>&1 | tee "$OUT/run.log"
 
       - name: Run the ClickHouse TPC-H Q21 capture
-        if: ${{ inputs.cell == 'clickhouse-tpch-q21' }}
+        if: ${{ matrix.cell == 'clickhouse-tpch-q21' }}
         run: |
           uv run -- python -m scripts.tuning_evidence run --platform clickhouse-server --port 9000 --container ch \
             --benchmark tpch --scale 1 --data-dir "$DATA/tpch_sf1" --queries 6,21 \
@@ -182,7 +156,7 @@ jobs:
             --commit "$(git rev-parse HEAD)" --out "$OUT/capture" 2>&1 | tee "$OUT/capture.log"
 
       - name: Record the container end state
-        if: ${{ always() && startsWith(inputs.cell, 'clickhouse-') }}
+        if: ${{ always() && startsWith(matrix.cell, 'clickhouse-') }}
         run: |
           docker exec ch cat /sys/fs/cgroup/memory.events > "$OUT/env/guest-memory-events-end.txt" || true
           docker stats --no-stream ch > "$OUT/env/docker-stats-end.txt" || true
@@ -204,7 +178,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: measurement-${{ inputs.cell }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/measurement/${{ inputs.cell }}
+          name: measurement-${{ matrix.cell }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/measurement/${{ matrix.cell }}
           if-no-files-found: error
           retention-days: 90
