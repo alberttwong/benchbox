@@ -23,14 +23,5 @@ jobs:
           docker run -d --name sr --memory 8g -p 9030:9030 -p 8040:8040 "$image"
           for _ in $(seq 1 120); do docker exec sr mysql -h127.0.0.1 -P9030 -uroot --skip-password -N -e 'SHOW BACKENDS' 2>/dev/null | grep -q true && break; sleep 2; done
           sleep 10
-      - name: Statement probes
-        run: uv run -- python diag/txn.py; uv run -- python diag/writes.py
-      - name: Operations without skips
-        if: always()
-        run: uv run -- python diag/ops.py 2>&1
-      - name: Operations without skips, second run
-        if: always()
-        run: uv run -- python diag/ops.py 2>&1 | grep -E '^ *(OP|VALIDATION|RESET)'
-      - name: Live tests
-        if: always()
-        run: STARROCKS_HOST_PORT=9030 STARROCKS_HTTP_PORT=8040 uv run -- python -m pytest -n 0 -m live_starrocks tests/integration/platforms/test_starrocks_live.py -rs
+      - name: Clear tuning metadata
+        run: uv run -- python diag/clear.py
