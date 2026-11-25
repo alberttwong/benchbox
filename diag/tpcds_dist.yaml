@@ -1,0 +1,59 @@
+primary_keys:
+  enabled: false
+foreign_keys:
+  enabled: false
+unique_constraints:
+  enabled: false
+check_constraints:
+  enabled: false
+platform_optimizations:
+  z_ordering_enabled: false
+  z_ordering_columns: []
+  auto_optimize_enabled: false
+  auto_compact_enabled: false
+  bloom_filters_enabled: false
+  bloom_filter_columns: []
+  materialized_views_enabled: false
+table_tunings:
+  STORE_SALES:
+    table_name: STORE_SALES
+    distribution:
+    - name: SS_ITEM_SK
+      type: INTEGER
+      order: 1
+  STORE_RETURNS:
+    table_name: STORE_RETURNS
+    distribution:
+    - name: SR_ITEM_SK
+      type: INTEGER
+      order: 1
+  CATALOG_SALES:
+    table_name: CATALOG_SALES
+    distribution:
+    - name: CS_ITEM_SK
+      type: INTEGER
+      order: 1
+  CATALOG_RETURNS:
+    table_name: CATALOG_RETURNS
+    distribution:
+    - name: CR_ITEM_SK
+      type: INTEGER
+      order: 1
+  WEB_SALES:
+    table_name: WEB_SALES
+    distribution:
+    - name: WS_ITEM_SK
+      type: INTEGER
+      order: 1
+  WEB_RETURNS:
+    table_name: WEB_RETURNS
+    distribution:
+    - name: WR_ITEM_SK
+      type: INTEGER
+      order: 1
+  INVENTORY:
+    table_name: INVENTORY
+    distribution:
+    - name: INV_ITEM_SK
+      type: INTEGER
+      order: 1
